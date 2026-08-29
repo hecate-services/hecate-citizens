@@ -7,16 +7,16 @@ domain code written yet.**
 ## One-line answer to "why does this exist"
 
 Two services independently need to know "who is a citizen of this mesh":
-`hecate-mcp-mail` (to address a mailbox) and `hecate-mcp-agora` (to attribute
+`hecate-mail` (to address a mailbox) and `hecate-mcp-agora` (to attribute
 a public post) — see [[project_macula_mcp_track]] in memory for the
 conversation this was extracted from. Rather than each maintaining its own
 federated copy of the same identity data (which drift apart the moment
 either one adds a citizen the other doesn't hear about), `hecate-citizens`
-is the one shared directory both depend on.
+is the one shared directory both consume.
 
-## Why this was split out of `hecate-mcp-mail` rather than left there
+## Why this was split out of `hecate-mail` rather than left there
 
-`hecate-mcp-mail`'s original plan (see that repo's `plans/PLAN_ROOT.md`
+`hecate-mail`'s original plan (see that repo's `plans/PLAN_ROOT.md`
 decisions log) built the citizens directory directly into the mail service,
 reasoning "one service, two internal concerns" — a defensible call *if
 mail were the only consumer*. It stopped being the right call the moment a
@@ -44,9 +44,9 @@ or care which mail instance hosts someone's mailbox, which agora posts
 belong to them, or anything else that's specific to a particular consumer.
 That's a deliberate boundary, not an oversight:
 
-- `hecate-mcp-mail`'s original `hosted_at` field (which mail instance a
+- `hecate-mail`'s original `hosted_at` field (which mail instance a
   citizen's mailbox lives on) is mail-specific routing data. It does NOT
-  belong here — it stays in `hecate-mcp-mail`'s own thin, mail-scoped
+  belong here — it stays in `hecate-mail`'s own thin, mail-scoped
   directory (see that repo's revised PART2).
 - A future `hecate-mcp-agora` needing to know "which relay is this citizen
   currently posting through," if it ever needs such a thing, would own that
@@ -71,19 +71,56 @@ capabilities() ->
 ```
 
 Directly `mesh_call`-able from `macula-mcp` (or any MCP client) with zero
-changes needed there, same as every capability in the `hecate-mcp-mail`
+changes needed there, same as every capability in the `hecate-mail`
 plan.
 
 ## Fields
 
 ```erlang
 #{citizen_did    => Did,           % the citizen's own identity, Ed25519 node_id
+  citizen_kind   => Kind,          % human | agent -- see below
   display_name   => DisplayName,   % self-asserted, not verified -- see Trust below
   offers         => Offers,        % self-described, informational list of what this citizen's agent can be asked to do
   expires_at     => ExpiresAt}     % presence TTL, drives staleness (below)
 ```
 
 No `hosted_at`, no per-service routing fields, ever — see Scope above.
+
+## Citizen kinds: human and agent are not symmetric, and that matters
+
+Two kinds of citizens register here: **humans**, via a mobile app
+(`macula-passport`/`macula-cam2me`), and **AI agents**, via `macula-mcp`.
+`citizen_kind` records which, mainly so a consumer (a display, `hecate-mail`
+deciding how to phrase a notification, whatever comes later) can treat them
+differently if it wants to — but the two kinds get to that DID by
+genuinely different paths, and one of those paths has a real gap worth
+stating plainly rather than discovering later:
+
+- **A human's DID comes from a realm-issued personal cert** — mortal,
+  mobile, per `identity_model.md`'s own description of a citizen credential.
+  Whatever mints it (the passport app, ultimately `hecate-realm`) is
+  designed to produce something stable across app restarts.
+- **An AI agent's DID, by default, is macula-mcp's own per-process
+  identity** — and per this workspace's own `macula-mcp` v0.4.0 fix
+  ([[project_macula_mcp_track]]), that identity is *deliberately* minted
+  fresh per server process and deleted on exit, specifically to stop
+  concurrent sessions from colliding with each other. **An agent citizen
+  registering with macula-mcp's default identity would get a brand-new DID
+  every session** — their own directory entry would be orphaned, and any
+  reply addressed to their previous session's DID would go nowhere. This is
+  not a hypothetical edge case; it's what happens by default, today, with
+  no extra step.
+- **The fix already exists, it just has to be used deliberately**:
+  `macula-mcp` already supports pinning a stable identity via the
+  `MACULA_MCP_IDENTITY` environment variable (built for a different reason
+  — restoring shared-identity continuity — but it solves this exactly).
+  An agent that wants to be a genuinely addressable citizen, not just a
+  one-shot caller, needs `MACULA_MCP_IDENTITY` set to a fixed path before
+  it ever calls `register_presence`. **This should be stated explicitly in
+  whatever documentation tells an agent how to use `hecate-citizens`** —
+  it's the one setup step that makes the difference between "a real
+  citizen" and "a citizen that stops existing the moment this session
+  ends."
 
 ## Design: read-model, federated via mesh facts
 
@@ -117,29 +154,41 @@ decide(#{expires_at := Cur}, Incoming) when Incoming >= Cur -> admit;
 decide(_Existing, _Incoming) -> stale.
 ```
 
-## Trust — stated plainly, same framing as `hecate-mcp-mail`
+## Trust — stated plainly, same framing as `hecate-mail`
 
 Directory entries are self-asserted. Nothing here verifies that a
 `display_name` is honest or that `offers` accurately describes what an
 agent will actually do. This is a phone book, not a background check —
 consistent with `identity_model.md`'s own v1/v2 roadmap (long-lived
 realm-signed cert now, policy+UCAN delegation later) and with the framing
-already settled for `hecate-mcp-mail`: a directory lists, it doesn't vouch.
+already settled for `hecate-mail`: a directory lists, it doesn't vouch.
+
+**A sharper, related open question, same root cause as `hecate-mail`
+PART3's**: nothing described above stops a caller from calling
+`register_presence` with *any* `citizen_did`, including one they don't
+actually hold the private key for — self-asserted extends to the DID
+itself, not just `display_name`/`offers`. Whether `hecate_om` hands a
+`macula_response` handler any cryptographically verified caller identity
+at all is the same unresolved question `hecate-mail` flagged for reading
+mailboxes; here it means someone could plausibly squat another citizen's
+DID in the directory. Resolve once, in whichever service builds the fix
+first — the answer doesn't differ between "can I read your mail" and "can
+I register presence as you."
 
 ## Consumers (as of this writing)
 
 | Consumer | Uses it for |
 |---|---|
-| `hecate-mcp-mail` | Confirming a DID belongs to a real citizen before/while addressing mail to them (nice-to-have lookup, not a hard dependency for `deposit_letter` itself — see that repo's revised PART2) |
+| `hecate-mail` | Confirming a DID belongs to a real citizen before/while addressing mail to them (nice-to-have lookup, not required for `deposit_letter` itself — see that repo's revised PART2) |
 | `hecate-mcp-agora` (not yet built) | Attributing a public post to a citizen, showing a display name |
 
-Neither consumer is a hard runtime dependency of this service — this
-service works standalone. They depend on it, not the reverse.
+This service does not require either consumer to be present or reachable
+— it works standalone. They consume it, not the reverse.
 
 ## Deployment
 
 Same model as every other `hecate-services` repo and as specified in
-`hecate-mcp-mail`'s own PART4: a realm-provisioned service principal on
+`hecate-mail`'s own PART4: a realm-provisioned service principal on
 real infrastructure (`beam00-03` or `msi00`), never a citizen's laptop.
 `identity_spec/0`:
 
@@ -165,6 +214,6 @@ on `main` and `v*` tags, same as every sibling service.
 
 Single phase — this service is small enough not to need one. Register,
 list, get, federation, `test_live/` coverage of a real register → list
-round trip against the demo fleet. Ship it, then update `hecate-mcp-mail`
-to actually call it (currently a documented dependency, not yet wired in
+round trip against the demo fleet. Ship it, then update `hecate-mail`
+to actually call it (currently documented as a consumer, not yet wired in
 code).

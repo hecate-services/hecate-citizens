@@ -21,9 +21,12 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - CI: `lint-and-test` on every push and pull request, `build-and-push` to
   the registry on `main` and on `v*` tags, publishing both `:latest` and the semver
   tag.
-- `plans/PLAN_ROOT.md`: the full design -- extracted from `hecate-mcp-mail`'s
+- `plans/PLAN_ROOT.md`: the full design -- extracted from `hecate-mail`'s
   original plan once a second real consumer (`hecate-mcp-agora`) was named,
   before either service's directory code existed to diverge. Identity-only
   scope (no per-consumer routing data), federated via mesh facts using the
   same Listener/Policy/Projection pattern `hecate-stations` already proves.
-  No domain code yet.
+  Distinguishes `citizen_kind` (human vs. agent) and flags a real gap:
+  macula-mcp's default per-process identity is ephemeral, so an agent
+  citizen needs `MACULA_MCP_IDENTITY` pinned to a stable path to be
+  addressable across sessions at all. No domain code yet.
