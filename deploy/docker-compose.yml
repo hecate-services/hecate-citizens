@@ -1,0 +1,40 @@
+# hecate-citizens — how to run this service.
+#
+# Runnable as-is. It carries what the SERVICE knows about itself: its image, its
+# port, the environment variables its own code reads, and its health check.
+#
+#   HECATE_REALM=<64-hex> MACULA_STATION_SEEDS=https://station.example:4433 \
+#     docker compose -p hecate-citizens -f deploy/docker-compose.yml up -d
+#
+# IF YOU DEPLOY THROUGH SOMETHING ELSE, keep this file anyway and let the other
+# thing carry PLACEMENT: which host, which station, which realm, which secret
+# store. The split is worth holding to, because the alternative is a config table
+# in a README and the real environment somewhere else, drifting apart with
+# nothing checking them.
+
+services:
+  hecate-citizens:
+    image: ghcr.io/hecate-services/hecate-citizens:latest
+    container_name: hecate-citizens
+    restart: unless-stopped
+    # HOST NETWORKING IS NOT LAZINESS. macula stations are reachable over IPv6
+    # only, and a default docker bridge has no IPv6, so a bridged container
+    # connects and then sits there with no healthy links, looking fine. If you
+    # do want a bridge, give it IPv6 explicitly.
+    network_mode: host
+    labels:
+      # Only meaningful if you run watchtower: it pulls a new :latest and
+      # recreates the container. Harmless otherwise.
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      # No default. A service that guesses its realm announces itself where
+      # nobody can attribute it, and that looks exactly like a healthy node.
+      - HECATE_REALM=${HECATE_REALM:?set HECATE_REALM to the 64-hex realm tag}
+      # No default either: naming a realm costs nothing, dialling somebody's
+      # production station from every dev clone does.
+      - MACULA_STATION_SEEDS=${MACULA_STATION_SEEDS:?set MACULA_STATION_SEEDS to a station URL}
+      - HECATE_NODE_NAME=hecate_citizens
+      - HECATE_NODE_HOST=127.0.0.1
+      - HECATE_COOKIE=hecate_citizens
+      # Host networking means a port already bound on this host fails SILENTLY.
+      - HECATE_HEALTH_PORT=8491

@@ -1,0 +1,10 @@
+## Node identity and runtime flags for hecate_citizens.
+-name ${HECATE_NODE_NAME}@${HECATE_NODE_HOST}
+-setcookie ${HECATE_COOKIE}
+
++K true
+
+## Async thread pool. Raise it only if this service does real file or port I/O;
+## for CPU-bound work the schedulers are the resource that matters and this flag
+## is not on that path.
++A 8

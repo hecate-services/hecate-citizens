@@ -1,0 +1,41 @@
+# Structural lint and unit tests. Runs on the glibc erlang image, where macula
+# resolves a prebuilt QUIC NIF and no Rust toolchain is needed. The alpine image
+# build forces a source build instead; see the Containerfile for why.
+
+name: lint-and-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    container:
+      # ⚠ MUST MATCH THE `Containerfile' beside it. See the note there.
+      image: erlang:28
+    steps:
+      - uses: actions/checkout@v4
+      # cmake, build-essential: hecate_om pulls in rocksdb (via barrel_docdb)
+      # and khepri/ra transitively, UNCONDITIONALLY -- needed even for a
+      # storeless, producer-only service. libssl-dev is not listed because
+      # the debian-based erlang image already ships it; alpine (the
+      # Containerfile's runtime base) does not, which is why it's explicit
+      # there.
+      #
+      # libsnappy-dev liblz4-dev libzstd-dev libbz2-dev: rocksdb's CMakeLists
+      # auto-detects each of these via find_package() and, if one is
+      # missing, silently disables it rather than failing the build -- so
+      # the compile step goes green while producing a NIF whose runtime
+      # config (barrel_docdb defaults document-body/BlobDB compression to
+      # snappy) can't actually open: `db_open' fails with "The specified
+      # blob compression type Snappy is not available." Hit for real in
+      # hecate_om's own CI (see its lint-and-test.yml for the incident) and
+      # again in hecate-stations, the first scaffolded service to actually
+      # exercise read_model_id/0 in CI -- install all four, not just
+      # whichever one happened to be exercised first.
+      - run: apt-get update && apt-get install -y --no-install-recommends cmake build-essential libsnappy-dev liblz4-dev libzstd-dev libbz2-dev
+      - run: rebar3 lint
+      - run: rebar3 eunit

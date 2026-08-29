@@ -1,0 +1,17 @@
+{application, hecate_citizens, [
+    {description, "The shared citizens directory for the Macula mesh -- who exists, federated across instances via mesh facts"},
+    {vsn, "0.1.0"},
+    {registered, [hecate_citizens_sup]},
+    {mod, {hecate_citizens_app, []}},
+    {applications, [
+        kernel,
+        stdlib,
+        crypto,
+        %% Mesh SDK, realm identity, capabilities, health.
+        hecate_om
+    ]},
+    {env, []},
+    {modules, []},
+    {licenses, ["Apache-2.0"]},
+    {links, [{"GitHub", "https://github.com/hecate-services/hecate-citizens"}]}
+]}.

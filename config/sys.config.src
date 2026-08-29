@@ -1,0 +1,19 @@
+%% Substituted by relx at boot; every ${VAR} must resolve or the node will not
+%% start with a malformed term. That is the correct failure: a service with a
+%% half-configured realm announces itself where nobody can attribute it, which
+%% looks exactly like a healthy node.
+[
+    {hecate_om, [
+        {service_cert_path, "/etc/hecate/secrets/service-cert.pem"},
+        {station_socket,    "/run/macula/station.sock"},
+        {health_port,       ${HECATE_HEALTH_PORT}},
+        {capability_topic,  <<"_mesh.cap.">>},
+        %% THE REALM IS AN APPLICATION ENV, NOT A SHELL VARIABLE, and this file
+        %% is the only place the two meet. hecate_om_identity:realm() reads
+        %% application:get_env(hecate_om, realm); exporting HECATE_REALM in the
+        %% shell and expecting that to be enough has cost a sibling service an
+        %% hour, because nothing translates between the two by itself.
+        {realm,             <<"${HECATE_REALM}">>}
+    ]},
+    {kernel, [{logger_level, info}]}
+].
