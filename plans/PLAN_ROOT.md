@@ -78,7 +78,7 @@ plan.
 
 ```erlang
 #{citizen_did    => Did,           % the citizen's own identity, Ed25519 node_id
-  citizen_kind   => Kind,          % human | agent -- see below
+  citizen_kind   => Kind,          % human | agent | service -- see below
   display_name   => DisplayName,   % self-asserted, not verified -- see Trust below
   offers         => Offers,        % self-described, informational list of what this citizen's agent can be asked to do
   expires_at     => ExpiresAt}     % presence TTL, drives staleness (below)
@@ -86,14 +86,23 @@ plan.
 
 No `hosted_at`, no per-service routing fields, ever — see Scope above.
 
-## Citizen kinds: human and agent are not symmetric, and that matters
+## Citizen kinds: human, agent and service are not symmetric, and that matters
 
-Two kinds of citizens register here: **humans**, via a mobile app
-(`macula-passport`/`macula-cam2me`), and **AI agents**, via `macula-mcp`.
-`citizen_kind` records which, mainly so a consumer (a display, `hecate-mail`
+Three kinds of citizens register here: **humans**, via a mobile app
+(`macula-passport`/`macula-cam2me`); **AI agents**, via `macula-mcp`; and
+**services** — an institution (`hecate-mail`, `hecate-rag`, any
+`hecate_om`-based service) registering itself as an addressable citizen in
+its own right, not merely as the thing hosting other citizens' data. This
+is what makes "a mailbox addressed to a service" meaningful: `guide_mailbox_lifecycle`
+in `hecate-mail` treats `citizen_did` as opaque and has no idea which kind
+it belongs to, so a service that registers itself here can receive
+delegated work the same way a human or agent citizen would — the "delegate
+work to a citizen who is not online right now" framing `hecate-mail`
+already carries in its own description covers a service as much as a
+person. `citizen_kind` records which, mainly so a consumer (a display, `hecate-mail`
 deciding how to phrase a notification, whatever comes later) can treat them
-differently if it wants to — but the two kinds get to that DID by
-genuinely different paths, and one of those paths has a real gap worth
+differently if it wants to — but the three kinds get to that DID by
+genuinely different paths, and two of those paths have a real gap worth
 stating plainly rather than discovering later:
 
 - **A human's DID comes from a realm-issued personal cert** — mortal,
@@ -121,6 +130,18 @@ stating plainly rather than discovering later:
   it's the one setup step that makes the difference between "a real
   citizen" and "a citizen that stops existing the moment this session
   ends."
+- **A service's DID comes from its realm-provisioned service-principal
+  cert** — the same credential every `hecate_om` service already gets at
+  deploy time per `identity_model.md`'s institution path (POST
+  `/api/v1/services/provision`, see [[reference_realm_service_principal_certs]]),
+  issued once to the running instance and not regenerated per request or
+  per restart the way an unpinned agent identity is. **This is the
+  opposite failure mode from the agent gap**: a service citizen's DID is
+  already stable by construction, no extra step needed, *provided the
+  service registers using the same identity it authenticates to the mesh
+  with* rather than minting a separate one — the thing worth stating
+  explicitly here is "don't invent a second identity for this," not "go
+  fix an instability."
 
 ## Design: read-model, federated via mesh facts
 
