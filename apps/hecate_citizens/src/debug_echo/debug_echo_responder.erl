@@ -15,9 +15,12 @@ handle_request(Payload, State) ->
     {reply, #{ok => 1, echo => describe(Payload)}, State}.
 
 describe(Payload) when is_map(Payload) ->
-    maps:fold(fun(K, V, Acc) -> Acc#{describe_term(K) => describe_term(V)} end, #{}, Payload);
+    maps:fold(fun(K, V, Acc) -> Acc#{key_binary(K) => describe_term(V)} end, #{}, Payload);
 describe(Other) ->
     describe_term(Other).
+
+key_binary(K) when is_binary(K) -> K;
+key_binary(K) when is_atom(K) -> atom_to_binary(K, utf8).
 
 describe_term(V) when is_binary(V) ->
     #{type => binary, byte_size => byte_size(V), value => V};
