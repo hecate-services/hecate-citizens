@@ -21,36 +21,54 @@
 %%% `register_presence' can't be replayed against any other gated
 %%% capability this service adds later.
 %%%
-%%% WIRE ENCODING: macula-cli's JSON->CBOR bridge (wirevalue.FromJSON)
-%%% sends every JSON string as a CBOR TEXT value, never a byte string --
-%%% confirmed reading it directly, no `0x'-prefix special-casing on the
-%%% way in (only on the way OUT, for display). So `citizen_did' and this
-%%% proof's `signature' arrive here as ASCII hex TEXT (what
-%%% `macula-cli identity sign' and `mesh_hello' print), not the 32/64
-%%% raw bytes the crypto actually operates on. `decode_did/1' undoes
-%%% that for citizen_did; `verify/3' undoes it for the signature
-%%% internally, since nothing else ever needs that one raw.
+%%% WIRE ENCODING, corrected after a real live-mesh test failed the
+%%% first version of this module: macula's frame decoder walks a
+%%% payload map and converts every CBOR TEXT value to an ATOM via
+%%% `binary_to_existing_atom/1' whenever the RECEIVING VM already has
+%%% that atom loaded -- if not, it stays a `{text, Binary}' tuple.
+%%% Which shape a given value arrives as therefore depends on what
+%%% atoms this VM happens to already know, not on anything the caller
+%%% controls: a real DID (effectively random hex) is essentially never
+%%% already an atom, so it always arrives `{text, Bin}'-tagged.
+%%% `unwrap_text/1' handles all three shapes (bare binary, bare atom,
+%%% `{text, Bin}') plus `undefined'; `decode_did/1' layers hex-decoding
+%%% on top for DID/signature fields, `decode_text/1' is the same
+%%% unwrap alone for any other wire-transported string (display_name,
+%%% offers, ...).
 %%% @end
 -module(citizen_ownership_proof).
 
--export([verify/3, message/3, decode_did/1]).
+-export([verify/3, message/3, decode_did/1, decode_text/1]).
 
 -define(MAX_SKEW_MS, 60_000).
 
-%% @doc Hex-decodes a wire-transported DID/node_id into its raw 32
-%% bytes. `undefined' for anything that isn't well-formed hex of the
-%% right length, rather than crashing the responder's transient
-%% process on a malformed caller input -- verify/3's own byte_size
-%% guard then rejects it cleanly as `invalid_citizen_did'.
+%% @doc Unwraps whatever shape a wire-transported string value arrived
+%% in (bare binary, bare atom, or `{text, Binary}') into a plain
+%% binary. `undefined' passes through unchanged.
+-spec unwrap_text(term()) -> binary() | undefined.
+unwrap_text(undefined) -> undefined;
+unwrap_text(Bin) when is_binary(Bin) -> Bin;
+unwrap_text({text, Bin}) when is_binary(Bin) -> Bin;
+unwrap_text(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8);
+unwrap_text(_Other) -> undefined.
+
+%% @doc `unwrap_text/1' alone, for any wire-transported string that
+%% isn't a DID/signature.
+-spec decode_text(term()) -> binary() | undefined.
+decode_text(V) -> unwrap_text(V).
+
+%% @doc Unwraps, then hex-decodes, a wire-transported DID/node_id into
+%% its raw 32 bytes.
 -spec decode_did(term()) -> binary() | undefined.
-decode_did(HexDid) when is_binary(HexDid), byte_size(HexDid) =:= 64 ->
+decode_did(V) -> hex_or_raw(unwrap_text(V)).
+
+hex_or_raw(undefined) ->
+    undefined;
+hex_or_raw(HexDid) when byte_size(HexDid) =:= 64 ->
     try binary:decode_hex(HexDid) catch error:badarg -> undefined end;
-decode_did(RawDid) when is_binary(RawDid), byte_size(RawDid) =:= 32 ->
-    %% Already raw bytes -- an in-VM caller (this repo's own eunit
-    %% fixtures, or a future non-wire caller) never round-trips
-    %% through hex at all.
+hex_or_raw(RawDid) when byte_size(RawDid) =:= 32 ->
     RawDid;
-decode_did(_Other) ->
+hex_or_raw(_Other) ->
     undefined.
 
 -spec message(binary(), integer(), binary()) -> binary().
@@ -66,17 +84,18 @@ verify(CitizenDid, Proof, Procedure)
 verify(_CitizenDid, _Proof, _Procedure) ->
     {error, invalid_citizen_did}.
 
-checked_fields({ok, Ts}, {ok, Sig}, CitizenDid, Procedure) when is_integer(Ts), is_binary(Sig) ->
-    decoded_sig(decode_hex_sig(Sig), Ts, CitizenDid, Procedure);
+checked_fields({ok, Ts}, {ok, Sig}, CitizenDid, Procedure) when is_integer(Ts) ->
+    decoded_sig(hex_or_raw_sig(unwrap_text(Sig)), Ts, CitizenDid, Procedure);
 checked_fields(_Ts, _Sig, _CitizenDid, _Procedure) ->
     {error, missing_proof}.
 
-decode_hex_sig(Sig) when byte_size(Sig) =:= 128 ->
+hex_or_raw_sig(undefined) ->
+    undefined;
+hex_or_raw_sig(Sig) when byte_size(Sig) =:= 128 ->
     try binary:decode_hex(Sig) catch error:badarg -> undefined end;
-decode_hex_sig(Sig) when byte_size(Sig) =:= 64 ->
-    %% Already raw -- see decode_did/1's own note on in-VM callers.
+hex_or_raw_sig(Sig) when byte_size(Sig) =:= 64 ->
     Sig;
-decode_hex_sig(_Other) ->
+hex_or_raw_sig(_Other) ->
     undefined.
 
 decoded_sig(undefined, _Ts, _CitizenDid, _Procedure) ->

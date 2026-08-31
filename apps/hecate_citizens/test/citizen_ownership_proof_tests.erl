@@ -45,6 +45,22 @@ decodes_wire_hex_text_to_raw_bytes_test() ->
     HexDid = binary:encode_hex(Did, lowercase),
     ?assertEqual(Did, citizen_ownership_proof:decode_did(HexDid)).
 
+%% macula's frame decoder converts a CBOR text VALUE to an atom
+%% whenever the receiving VM already knows that atom, else leaves it
+%% `{text, Bin}'-tagged (confirmed live -- see this module's own doc).
+
+decode_did_unwraps_a_text_tagged_hex_string_test() ->
+    KeyPair = macula_identity:generate(),
+    Did = macula_identity:public(KeyPair),
+    HexDid = binary:encode_hex(Did, lowercase),
+    ?assertEqual(Did, citizen_ownership_proof:decode_did({text, HexDid})).
+
+decode_text_unwraps_an_atom_value_test() ->
+    ?assertEqual(<<"human">>, citizen_ownership_proof:decode_text(human)).
+
+decode_text_unwraps_a_text_tagged_value_test() ->
+    ?assertEqual(<<"hello">>, citizen_ownership_proof:decode_text({text, <<"hello">>})).
+
 accepts_a_genuine_proof_shaped_exactly_like_the_wire_test() ->
     KeyPair = macula_identity:generate(),
     Did = macula_identity:public(KeyPair),

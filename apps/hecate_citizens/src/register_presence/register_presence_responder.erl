@@ -45,11 +45,16 @@ fields(CitizenDid, Payload) ->
     TtlMs = hecate_om_wire:field(ttl_ms, Payload, ?DEFAULT_TTL_MS),
     #{
         citizen_did => CitizenDid,
-        citizen_kind => hecate_om_wire:field(citizen_kind, Payload),
-        display_name => hecate_om_wire:field(display_name, Payload, undefined),
-        offers => hecate_om_wire:field(offers, Payload, []),
+        citizen_kind => citizen_ownership_proof:decode_text(hecate_om_wire:field(citizen_kind, Payload)),
+        display_name => citizen_ownership_proof:decode_text(hecate_om_wire:field(display_name, Payload, undefined)),
+        offers => decode_offers(hecate_om_wire:field(offers, Payload, [])),
         expires_at => erlang:system_time(millisecond) + TtlMs
     }.
+
+decode_offers(Offers) when is_list(Offers) ->
+    [citizen_ownership_proof:decode_text(Offer) || Offer <- Offers];
+decode_offers(_Other) ->
+    [].
 
 publish(Fields) ->
     publish_via(hecate_om:mesh_handles(), Fields).

@@ -52,10 +52,7 @@ capabilities() ->
      #{name => <<"hecate_citizens.list_citizens">>, version => 1,
        handler => {list_citizens_responder, []}},
      #{name => <<"hecate_citizens.get_citizen">>, version => 1,
-       handler => {get_citizen_responder, []}},
-     %% TEMPORARY, remove before the next real commit.
-     #{name => <<"hecate_citizens.debug_echo">>, version => 1,
-       handler => {debug_echo_responder, []}}
+       handler => {get_citizen_responder, []}}
     ].
 
 %% THE AUTHORITY THIS SERVICE ASKS THE REALM FOR, and deliberately nothing more.
