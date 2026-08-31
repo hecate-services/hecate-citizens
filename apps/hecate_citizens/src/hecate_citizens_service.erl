@@ -16,6 +16,13 @@
 -behaviour(hecate_om_service).
 
 -export([info/0, start/1, stop/1, health/0, capabilities/0, identity_spec/0]).
+%% Read model (no event store -- this service is pure read-model, per
+%% its own plans/PLAN_ROOT.md "Design: read-model, federated via mesh
+%% facts") + the federation subscription that feeds it. read_model_id/0
+%% REQUIRES data_dir/0 alongside it (hecate_om_service's own doc: "When
+%% exported alongside data_dir/0, hecate_om:boot/1 opens the database
+%% at data_dir/read_model_id") -- barrel_docdb starts idle without both.
+-export([read_model_id/0, data_dir/0, subscriptions/0]).
 
 info() ->
     #{name => <<"hecate-citizens">>,
@@ -33,17 +40,45 @@ health() -> ok.
 
 %% WHAT THIS SERVICE ANNOUNCES IT CAN DO. Other services find this one by these
 %% names, so each entry is a promise that something answers.
-capabilities() -> [].
+%%
+%% register_presence is gated behind citizen_ownership_proof (a caller
+%% must prove they hold the private key for the citizen_did they're
+%% registering). list_citizens/get_citizen are ungated -- this is a
+%% public directory, not one citizen's own private data.
+capabilities() ->
+    [
+     #{name => <<"hecate_citizens.register_presence">>, version => 1,
+       handler => {register_presence_responder, []}},
+     #{name => <<"hecate_citizens.list_citizens">>, version => 1,
+       handler => {list_citizens_responder, []}},
+     #{name => <<"hecate_citizens.get_citizen">>, version => 1,
+       handler => {get_citizen_responder, []}}
+    ].
 
 %% THE AUTHORITY THIS SERVICE ASKS THE REALM FOR, and deliberately nothing more.
 %% Ask for exactly the topics you publish and subscribe to. Popped, an attacker
 %% gains precisely this and no more, which is the whole point of listing it.
-%%
-%% The scope is claimed now because it is the namespace every later resource
-%% hangs under, and a scope costs nothing while a rename costs every deployed
-%% peer.
 identity_spec() ->
     #{scope => <<"hecate-citizens">>,
-      actions => [],
-      resources => [],
+      actions => [<<"register_presence">>, <<"list_citizens">>, <<"get_citizen">>],
+      resources => [<<"citizens/*">>],
       ttl_days => 30}.
+
+%% @doc The barrel_docdb database this service's directory lives in --
+%% `citizen_read_model' writes/reads by this same name (`hecate_om_service''s
+%% own doc: "PRJ code writes to it with barrel_docdb directly").
+-spec read_model_id() -> binary().
+read_model_id() -> <<"hecate_citizens">>.
+
+%% @doc Where the read model (and, per config/sys.config.src, this
+%% service's own signing keypair) live on disk. Defaults to a path
+%% inside the container; the fleet keeps application data on its
+%% `/bulk' drives, so the deploy compose mounts a volume and sets this.
+-spec data_dir() -> string().
+data_dir() -> os:getenv("HECATE_DATA_DIR", "/var/lib/hecate-citizens").
+
+%% @doc Federation: hear every other instance's (and this instance's
+%% own) citizen_presence republish, feeding on_citizen_presence_maybe_admit.
+-spec subscriptions() -> [{binary(), module(), term()}].
+subscriptions() ->
+    [{<<"hecate_citizens.citizen_presence">>, citizen_presence_listener, []}].

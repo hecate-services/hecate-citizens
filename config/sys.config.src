@@ -8,6 +8,20 @@
         {station_socket,    "/run/macula/station.sock"},
         {health_port,       ${HECATE_HEALTH_PORT}},
         {capability_topic,  <<"_mesh.cap.">>},
+        %% MANDATORY BECAUSE THIS SERVICE ADVERTISES CAPABILITIES (see
+        %% capabilities/0 in hecate_citizens_service.erl). Without this,
+        %% hecate_om_identity:keypair/0 returns {error, no_keypair} forever,
+        %% and hecate_om_capabilities:advertise_with/7's guard clause
+        %% requires {ok, KeyPair} -- so it silently no-ops on every republish
+        %% tick, permanently, with no crash and no error logged. The service
+        %% still connects and calls fine (peering doesn't need a persistent
+        %% keypair), so this looks exactly like a healthy node while every
+        %% capability is unreachable. Same bug class hecate-tube and
+        %% hecate-mail already hit and fixed (hecate-mail commit e572346) --
+        %% caught here before first deploy rather than after, since this
+        %% service went from zero capabilities to three in the same change
+        %% that would have made the gap real.
+        {identity_key_path, "${HECATE_DATA_DIR}/identity/keypair.erl.bin"},
         %% THE REALM IS AN APPLICATION ENV, NOT A SHELL VARIABLE, and this file
         %% is the only place the two meet. hecate_om_identity:realm() reads
         %% application:get_env(hecate_om, realm); exporting HECATE_REALM in the

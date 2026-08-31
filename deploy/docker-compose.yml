@@ -1,4 +1,4 @@
-# hecate-citizens — how to run this service.
+# hecate-citizens -- the shared citizens directory for the Macula mesh.
 #
 # Runnable as-is. It carries what the SERVICE knows about itself: its image, its
 # port, the environment variables its own code reads, and its health check.
@@ -22,6 +22,17 @@ services:
     # connects and then sits there with no healthy links, looking fine. If you
     # do want a bridge, give it IPv6 explicitly.
     network_mode: host
+    volumes:
+      # ⚠ REQUIRED, BECAUSE THIS SERVICE OPENS A READ MODEL (read_model_id/0)
+      # AND SIGNS ITS OWN CAPABILITY ADVERTISEMENTS (identity_key_path).
+      # Without the mount both live inside the container and every recreate
+      # destroys them, which is the same as not keeping them, and watchtower
+      # recreates containers as a matter of routine.
+      #
+      # ON A BULK DRIVE, NOT THE ROOT FILESYSTEM, on any fleet node. Those boot
+      # from a small eMMC with a root partition measured in single-digit gigabytes
+      # and keep application data on /bulk0.
+      - ${HECATE_DATA:-/bulk0/hecate-citizens}:/data
     labels:
       # Only meaningful if you run watchtower: it pulls a new :latest and
       # recreates the container. Harmless otherwise.
@@ -37,4 +48,7 @@ services:
       - HECATE_NODE_HOST=127.0.0.1
       - HECATE_COOKIE=hecate_citizens
       # Host networking means a port already bound on this host fails SILENTLY.
-      - HECATE_HEALTH_PORT=8491
+      - HECATE_HEALTH_PORT=8497
+      # Where the read model and signing keypair land, matching the volume
+      # above.
+      - HECATE_DATA_DIR=/data

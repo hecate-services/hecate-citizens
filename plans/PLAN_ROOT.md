@@ -1,8 +1,13 @@
 # hecate-citizens — Plan
 
-**Status: Planning. Scaffold generated (`rebar3 new hecate_service`, no
-store — this is read-model only), builds, all 10 generated tests pass. No
-domain code written yet.**
+**Status: Domain code shipped 2026-08-31** — register_presence, list_citizens,
+get_citizen; Listener/Policy/Projection federation via
+`citizen_presence_listener`/`on_citizen_presence_maybe_admit`/
+`citizen_read_model`; `citizen_ownership_proof` closes the "Trust" section's
+DID-squatting question below. 18 eunit tests pass, elvis clean, release
+assembles. Not yet deployed to the fleet — `deploy/docker-compose.yml`
+exists; wiring into `macula-io/macula-demo/infrastructure` is a separate
+next step.
 
 ## One-line answer to "why does this exist"
 
