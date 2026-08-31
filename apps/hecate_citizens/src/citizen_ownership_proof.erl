@@ -20,12 +20,38 @@
 %%% private key -- procedure included so a proof minted for
 %%% `register_presence' can't be replayed against any other gated
 %%% capability this service adds later.
+%%%
+%%% WIRE ENCODING: macula-cli's JSON->CBOR bridge (wirevalue.FromJSON)
+%%% sends every JSON string as a CBOR TEXT value, never a byte string --
+%%% confirmed reading it directly, no `0x'-prefix special-casing on the
+%%% way in (only on the way OUT, for display). So `citizen_did' and this
+%%% proof's `signature' arrive here as ASCII hex TEXT (what
+%%% `macula-cli identity sign' and `mesh_hello' print), not the 32/64
+%%% raw bytes the crypto actually operates on. `decode_did/1' undoes
+%%% that for citizen_did; `verify/3' undoes it for the signature
+%%% internally, since nothing else ever needs that one raw.
 %%% @end
 -module(citizen_ownership_proof).
 
--export([verify/3, message/3]).
+-export([verify/3, message/3, decode_did/1]).
 
 -define(MAX_SKEW_MS, 60_000).
+
+%% @doc Hex-decodes a wire-transported DID/node_id into its raw 32
+%% bytes. `undefined' for anything that isn't well-formed hex of the
+%% right length, rather than crashing the responder's transient
+%% process on a malformed caller input -- verify/3's own byte_size
+%% guard then rejects it cleanly as `invalid_citizen_did'.
+-spec decode_did(term()) -> binary() | undefined.
+decode_did(HexDid) when is_binary(HexDid), byte_size(HexDid) =:= 64 ->
+    try binary:decode_hex(HexDid) catch error:badarg -> undefined end;
+decode_did(RawDid) when is_binary(RawDid), byte_size(RawDid) =:= 32 ->
+    %% Already raw bytes -- an in-VM caller (this repo's own eunit
+    %% fixtures, or a future non-wire caller) never round-trips
+    %% through hex at all.
+    RawDid;
+decode_did(_Other) ->
+    undefined.
 
 -spec message(binary(), integer(), binary()) -> binary().
 message(CitizenDid, Timestamp, Procedure)
@@ -40,11 +66,23 @@ verify(CitizenDid, Proof, Procedure)
 verify(_CitizenDid, _Proof, _Procedure) ->
     {error, invalid_citizen_did}.
 
-checked_fields({ok, Ts}, {ok, Sig}, CitizenDid, Procedure)
-  when is_integer(Ts), is_binary(Sig) ->
-    fresh(Ts, CitizenDid, Sig, Procedure);
+checked_fields({ok, Ts}, {ok, Sig}, CitizenDid, Procedure) when is_integer(Ts), is_binary(Sig) ->
+    decoded_sig(decode_hex_sig(Sig), Ts, CitizenDid, Procedure);
 checked_fields(_Ts, _Sig, _CitizenDid, _Procedure) ->
     {error, missing_proof}.
+
+decode_hex_sig(Sig) when byte_size(Sig) =:= 128 ->
+    try binary:decode_hex(Sig) catch error:badarg -> undefined end;
+decode_hex_sig(Sig) when byte_size(Sig) =:= 64 ->
+    %% Already raw -- see decode_did/1's own note on in-VM callers.
+    Sig;
+decode_hex_sig(_Other) ->
+    undefined.
+
+decoded_sig(undefined, _Ts, _CitizenDid, _Procedure) ->
+    {error, bad_signature};
+decoded_sig(Sig, Ts, CitizenDid, Procedure) ->
+    fresh(Ts, CitizenDid, Sig, Procedure).
 
 fresh(Ts, CitizenDid, Sig, Procedure) ->
     skew_checked(abs(erlang:system_time(millisecond) - Ts), Ts, CitizenDid, Sig, Procedure).

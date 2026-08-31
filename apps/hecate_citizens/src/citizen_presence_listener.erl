@@ -24,7 +24,7 @@ init(Args) -> {ok, Args}.
 
 handle_event(_Topic, Payload, _Meta, State) ->
     ok = on_citizen_presence_maybe_admit:handle(#{
-        citizen_did => hecate_om_wire:field(citizen_did, Payload),
+        citizen_did => citizen_ownership_proof:decode_did(hecate_om_wire:field(citizen_did, Payload)),
         citizen_kind => hecate_om_wire:field(citizen_kind, Payload),
         display_name => hecate_om_wire:field(display_name, Payload, undefined),
         offers => hecate_om_wire:field(offers, Payload, []),

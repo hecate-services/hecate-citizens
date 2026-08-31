@@ -25,23 +25,26 @@ init(_Args) -> {ok, []}.
 
 -spec handle_request(map(), term()) -> {reply, map(), term()}.
 handle_request(Payload, State) ->
-    CitizenDid = hecate_om_wire:field(citizen_did, Payload),
+    %% citizen_did arrives as ASCII hex TEXT over the wire, decoded once
+    %% here and reused for both the proof check and the stored fields --
+    %% see citizen_ownership_proof's own doc on why.
+    CitizenDid = citizen_ownership_proof:decode_did(hecate_om_wire:field(citizen_did, Payload)),
     Proof = hecate_om_wire:field(proof, Payload, #{}),
-    Reply = proven_reply(citizen_ownership_proof:verify(CitizenDid, Proof, ?PROCEDURE), Payload),
+    Reply = proven_reply(citizen_ownership_proof:verify(CitizenDid, Proof, ?PROCEDURE), CitizenDid, Payload),
     {reply, Reply, State}.
 
-proven_reply(ok, Payload) ->
-    Fields = fields(Payload),
+proven_reply(ok, CitizenDid, Payload) ->
+    Fields = fields(CitizenDid, Payload),
     ok = on_citizen_presence_maybe_admit:handle(Fields),
     ok = publish(Fields),
     #{ok => 1, expires_at => maps:get(expires_at, Fields)};
-proven_reply({error, Reason}, _Payload) ->
+proven_reply({error, Reason}, _CitizenDid, _Payload) ->
     #{ok => 0, error => reason_to_binary(Reason)}.
 
-fields(Payload) ->
+fields(CitizenDid, Payload) ->
     TtlMs = hecate_om_wire:field(ttl_ms, Payload, ?DEFAULT_TTL_MS),
     #{
-        citizen_did => hecate_om_wire:field(citizen_did, Payload),
+        citizen_did => CitizenDid,
         citizen_kind => hecate_om_wire:field(citizen_kind, Payload),
         display_name => hecate_om_wire:field(display_name, Payload, undefined),
         offers => hecate_om_wire:field(offers, Payload, []),

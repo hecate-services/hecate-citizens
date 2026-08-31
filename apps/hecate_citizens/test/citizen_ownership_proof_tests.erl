@@ -36,3 +36,21 @@ rejects_a_missing_proof_test() ->
     KeyPair = macula_identity:generate(),
     Did = macula_identity:public(KeyPair),
     ?assertEqual({error, missing_proof}, citizen_ownership_proof:verify(Did, #{}, ?PROC)).
+
+%% decode_did/1 -- the wire hands hex TEXT, not raw bytes.
+
+decodes_wire_hex_text_to_raw_bytes_test() ->
+    KeyPair = macula_identity:generate(),
+    Did = macula_identity:public(KeyPair),
+    HexDid = binary:encode_hex(Did, lowercase),
+    ?assertEqual(Did, citizen_ownership_proof:decode_did(HexDid)).
+
+accepts_a_genuine_proof_shaped_exactly_like_the_wire_test() ->
+    KeyPair = macula_identity:generate(),
+    Did = macula_identity:public(KeyPair),
+    Ts = erlang:system_time(millisecond),
+    RawSig = macula_identity:sign(citizen_ownership_proof:message(Did, Ts, ?PROC), KeyPair),
+    WireDid = binary:encode_hex(Did, lowercase),
+    WireProof = #{timestamp => Ts, signature => binary:encode_hex(RawSig, lowercase)},
+    DecodedDid = citizen_ownership_proof:decode_did(WireDid),
+    ?assertEqual(ok, citizen_ownership_proof:verify(DecodedDid, WireProof, ?PROC)).

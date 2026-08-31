@@ -10,7 +10,9 @@ init(_Args) -> {ok, []}.
 
 -spec handle_request(map(), term()) -> {reply, map(), term()}.
 handle_request(Payload, State) ->
-    CitizenDid = hecate_om_wire:field(citizen_did, Payload),
+    %% citizen_did arrives as ASCII hex TEXT over the wire, decoded here
+    %% -- see citizen_ownership_proof's own doc on why.
+    CitizenDid = citizen_ownership_proof:decode_did(hecate_om_wire:field(citizen_did, Payload)),
     Reply = fetched(citizen_read_model:find(CitizenDid)),
     {reply, Reply, State}.
 
