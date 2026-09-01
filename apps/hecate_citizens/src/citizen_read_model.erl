@@ -16,14 +16,19 @@
 -spec upsert(map()) -> ok.
 upsert(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields)
   when is_binary(CitizenDid), is_integer(ExpiresAt) ->
-    Doc = #{
+    %% omit_undefined/1: barrel_docdb's automatic secondary indexing
+    %% crashes outright on an `undefined' field value
+    %% (barrel_store_keys:encode_path_component/1 has no clause for
+    %% it) -- confirmed live on hecate-mail's identical pattern,
+    %% display_name is `undefined' whenever a citizen doesn't set one.
+    Doc = omit_undefined(#{
         <<"id">> => id(CitizenDid),
         <<"citizen_did">> => CitizenDid,
         <<"citizen_kind">> => maps:get(citizen_kind, Fields),
         <<"display_name">> => maps:get(display_name, Fields, undefined),
         <<"offers">> => maps:get(offers, Fields, []),
         <<"expires_at">> => ExpiresAt
-    },
+    }),
     put(Doc).
 
 -spec find(binary()) -> {ok, map()} | {error, not_found}.
