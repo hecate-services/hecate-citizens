@@ -58,16 +58,36 @@ skip_expired(_Now, _Doc, _Fun, Acc) ->
     {ok, Acc}.
 
 %% @doc A stored doc, shaped for an RPC reply -- `undefined' fields
-%% omitted (`maybe_put' convention, `station_read_model').
+%% omitted (`maybe_put' convention, `station_read_model'), and every text
+%% field tagged `{text, Bin}'.
+%%
+%% The tag is the wire contract, not decoration: macula encodes a bare
+%% Erlang binary as a CBOR BYTE string and `{text, Bin}' as a CBOR TEXT
+%% string, so a reply that puts names and kinds in bare binaries reaches
+%% every non-BEAM consumer (macula-cli, macula-mcp, the Go/Rust/.NET/PHP
+%% SDKs) as hex -- which is exactly what the first macula-mcp agent to
+%% register itself here got back from list_citizens on 2026-09-02:
+%% `"display_name": "0x66726573682d..."'. The `citizen_did' goes out as
+%% the same lowercase hex text `register_presence' accepts on the way in,
+%% not as the raw 32 bytes the record keys on. Integers stay integers.
 -spec to_wire(map()) -> map().
 to_wire(Doc) ->
     omit_undefined(#{
-        citizen_did => maps:get(<<"citizen_did">>, Doc),
-        citizen_kind => maps:get(<<"citizen_kind">>, Doc),
-        display_name => maps:get(<<"display_name">>, Doc, undefined),
-        offers => maps:get(<<"offers">>, Doc, []),
+        citizen_did => text(did_hex(maps:get(<<"citizen_did">>, Doc))),
+        citizen_kind => text(maps:get(<<"citizen_kind">>, Doc)),
+        display_name => text(maps:get(<<"display_name">>, Doc, undefined)),
+        offers => [text(O) || O <- maps:get(<<"offers">>, Doc, []), is_binary(O)],
         expires_at => maps:get(<<"expires_at">>, Doc)
     }).
+
+%% Raw 32-byte DID (how the record stores it) to lowercase hex; already-hex
+%% text passes through.
+did_hex(Did) when is_binary(Did), byte_size(Did) =:= 32 -> binary:encode_hex(Did, lowercase);
+did_hex(Did) -> Did.
+
+text(undefined) -> undefined;
+text(Bin) when is_binary(Bin) -> {text, Bin};
+text(Atom) when is_atom(Atom) -> {text, atom_to_binary(Atom, utf8)}.
 
 omit_undefined(Map) ->
     maps:filter(fun(_K, V) -> V =/= undefined end, Map).
