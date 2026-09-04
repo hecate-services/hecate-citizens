@@ -16,20 +16,35 @@
 -spec upsert(map()) -> ok.
 upsert(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields)
   when is_binary(CitizenDid), is_integer(ExpiresAt) ->
-    %% omit_undefined/1: barrel_docdb's automatic secondary indexing
-    %% crashes outright on an `undefined' field value
+    %% Read-modify-write against whatever's already there -- barrel_docdb
+    %% requires a write over an existing doc to carry its current `_rev'
+    %% or it refuses with `{error, conflict}' (confirmed live: every
+    %% re-registration of an already-known citizen crashed put/1 this
+    %% way, since a from-scratch Doc here never carried one). Same
+    %% pattern hecate-stations' station_read_model already establishes
+    %% for the identical situation (a heartbeat re-upserting the same
+    %% node_id doc).
+    %%
+    %% omit_undefined/1 on the new-fields side: barrel_docdb's automatic
+    %% secondary indexing crashes outright on an `undefined' field value
     %% (barrel_store_keys:encode_path_component/1 has no clause for
     %% it) -- confirmed live on hecate-mail's identical pattern,
     %% display_name is `undefined' whenever a citizen doesn't set one.
-    Doc = omit_undefined(#{
-        <<"id">> => id(CitizenDid),
+    New = omit_undefined(#{
         <<"citizen_did">> => CitizenDid,
         <<"citizen_kind">> => maps:get(citizen_kind, Fields),
         <<"display_name">> => maps:get(display_name, Fields, undefined),
         <<"offers">> => maps:get(offers, Fields, []),
         <<"expires_at">> => ExpiresAt
     }),
-    put(Doc).
+    put(maps:merge(existing_or_new(id(CitizenDid)), New)).
+
+existing_or_new(Id) ->
+    {ok, DbName} = hecate_om:read_model(),
+    case barrel_docdb:get_doc(DbName, Id) of
+        {ok, Doc} -> Doc;
+        {error, not_found} -> #{<<"id">> => Id}
+    end.
 
 -spec find(binary()) -> {ok, map()} | {error, not_found}.
 find(CitizenDid) when is_binary(CitizenDid) ->
