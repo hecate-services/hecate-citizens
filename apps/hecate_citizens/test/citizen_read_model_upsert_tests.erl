@@ -37,10 +37,14 @@ teardown(_) ->
     persistent_term:erase(hecate_om_read_model_db),
     ok.
 
+%% `cases/1', not `cases/0': eunit takes a nullary fun in this position for a
+%% single plain test, runs it, and drops the `?_assert' list it returns, so
+%% none of the upserts below ever ran. An instantiator gets setup/0's result
+%% and its list is run as tests, inside the setup.
 upsert_test_() ->
-    {setup, fun setup/0, fun teardown/1, fun cases/0}.
+    {setup, fun setup/0, fun teardown/1, fun cases/1}.
 
-cases() ->
+cases(ok) ->
     CitizenDid = crypto:strong_rand_bytes(32),
     First = #{citizen_did => CitizenDid, citizen_kind => <<"agent">>,
               display_name => <<"metis">>, offers => [<<"conversation">>],
