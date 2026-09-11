@@ -30,3 +30,20 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   macula-mcp's default per-process identity is ephemeral, so an agent
   citizen needs `MACULA_MCP_IDENTITY` pinned to a stable path to be
   addressable across sessions at all. No domain code yet.
+
+### Fixed
+
+- The `hecate_citizens.citizen_presence` fact has the wire shape of a
+  `list_citizens` entry (`citizen_read_model:to_wire/1`): `citizen_kind`,
+  `display_name` and each offer as CBOR text, and `citizen_did` as lowercase
+  hex text instead of the raw 32 bytes. Non-BEAM subscribers used to get
+  those as bytes. `citizen_presence_listener` already decoded both forms, so
+  instances on the old and the new code keep federating. (hecate-citizens#1)
+- The `error` in `get_citizen` and `register_presence` replies is CBOR text
+  instead of a byte string. (hecate-citizens#1)
+- `citizen_read_model:to_wire/1` omits a missing `citizen_kind` instead of
+  crashing on it. `register_presence` doesn't require a kind, so one such
+  registration would make every `list_citizens` call crash (read from the
+  code, not seen live).
+- CI: `lint-and-test` installs a Rust toolchain. macula's `macula_cbor_nif`
+  compile hook fails the build without cargo rather than skip.

@@ -13,7 +13,7 @@
 -module(register_presence_responder).
 -behaviour(macula_response).
 
--export([init/1, handle_request/2]).
+-export([init/1, handle_request/2, presence_fact/1]).
 
 -define(PROCEDURE, <<"hecate_citizens.register_presence">>).
 -define(TOPIC, <<"hecate_citizens.citizen_presence">>).
@@ -38,8 +38,10 @@ proven_reply(ok, CitizenDid, Payload) ->
     ok = on_citizen_presence_maybe_admit:handle(Fields),
     ok = publish(Fields),
     #{ok => 1, expires_at => maps:get(expires_at, Fields)};
+%% The reason goes out as `{text, Bin}' (CBOR text); a bare binary would
+%% reach non-BEAM callers as bytes.
 proven_reply({error, Reason}, _CitizenDid, _Payload) ->
-    #{ok => 0, error => reason_to_binary(Reason)}.
+    #{ok => 0, error => {text, reason_to_binary(Reason)}}.
 
 fields(CitizenDid, Payload) ->
     TtlMs = hecate_om_wire:field(ttl_ms, Payload, ?DEFAULT_TTL_MS),
@@ -56,14 +58,23 @@ decode_offers(Offers) when is_list(Offers) ->
 decode_offers(_Other) ->
     [].
 
-publish(Fields) ->
-    publish_via(hecate_om:mesh_handles(), Fields).
+%% @doc The `citizen_presence' fact for a registration: the same wire shape
+%% as a list_citizens entry, `citizen_read_model:to_wire/1' over the stored
+%% fields. Text goes out as CBOR text and the DID as lowercase hex text, so
+%% non-BEAM subscribers get strings instead of bytes.
+%% `citizen_presence_listener' decodes this shape and the older raw one.
+-spec presence_fact(map()) -> map().
+presence_fact(Fields) ->
+    citizen_read_model:to_wire(citizen_read_model:presence_doc(Fields)).
 
-publish_via({ok, Pool, Realm}, Fields) ->
+publish(Fields) ->
+    publish_via(hecate_om:mesh_handles(), presence_fact(Fields)).
+
+publish_via({ok, Pool, Realm}, Fact) ->
     {ok, _Pid} = macula_publisher:start_link(citizen_presence_publisher, Pool, Realm,
-                                             ?TOPIC, Fields, []),
+                                             ?TOPIC, Fact, []),
     ok;
-publish_via({error, _Reason}, _Fields) ->
+publish_via({error, _Reason}, _Fact) ->
     %% Local write already committed -- federation is best-effort, same as
     %% hecate-tube's channel_announcement:publish_via/2. The periodic
     %% republish a client is expected to do (per this responder's own TTL

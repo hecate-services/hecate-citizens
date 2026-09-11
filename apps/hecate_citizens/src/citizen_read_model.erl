@@ -11,7 +11,7 @@
 %%% @end
 -module(citizen_read_model).
 
--export([upsert/1, find/1, fold_live/2, to_wire/1]).
+-export([upsert/1, find/1, fold_live/2, presence_doc/1, to_wire/1]).
 
 -spec upsert(map()) -> ok.
 upsert(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields)
@@ -24,20 +24,26 @@ upsert(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields)
     %% pattern hecate-stations' station_read_model already establishes
     %% for the identical situation (a heartbeat re-upserting the same
     %% node_id doc).
-    %%
-    %% omit_undefined/1 on the new-fields side: barrel_docdb's automatic
-    %% secondary indexing crashes outright on an `undefined' field value
-    %% (barrel_store_keys:encode_path_component/1 has no clause for
-    %% it) -- confirmed live on hecate-mail's identical pattern,
-    %% display_name is `undefined' whenever a citizen doesn't set one.
-    New = omit_undefined(#{
+    put(maps:merge(existing_or_new(id(CitizenDid)), presence_doc(Fields))).
+
+%% @doc The stored fields of one presence registration, keyed by binary.
+%% `register_presence_responder' also publishes it through `to_wire/1', so
+%% the citizen_presence fact and a list_citizens entry have one shape.
+%%
+%% `undefined' fields are omitted: barrel_docdb's automatic secondary
+%% indexing crashes outright on an `undefined' field value
+%% (barrel_store_keys:encode_path_component/1 has no clause for it).
+%% Confirmed live on hecate-mail's identical pattern, where display_name
+%% is `undefined' whenever a citizen doesn't set one.
+-spec presence_doc(map()) -> map().
+presence_doc(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields) ->
+    omit_undefined(#{
         <<"citizen_did">> => CitizenDid,
         <<"citizen_kind">> => maps:get(citizen_kind, Fields),
         <<"display_name">> => maps:get(display_name, Fields, undefined),
         <<"offers">> => maps:get(offers, Fields, []),
         <<"expires_at">> => ExpiresAt
-    }),
-    put(maps:merge(existing_or_new(id(CitizenDid)), New)).
+    }).
 
 existing_or_new(Id) ->
     {ok, DbName} = hecate_om:read_model(),
@@ -85,11 +91,13 @@ skip_expired(_Now, _Doc, _Fun, Acc) ->
 %% `"display_name": "0x66726573682d..."'. The `citizen_did' goes out as
 %% the same lowercase hex text `register_presence' accepts on the way in,
 %% not as the raw 32 bytes the record keys on. Integers stay integers.
+%% `register_presence' does not require a `citizen_kind', so a doc can
+%% lack one; it is omitted like any other absent field.
 -spec to_wire(map()) -> map().
 to_wire(Doc) ->
     omit_undefined(#{
         citizen_did => text(did_hex(maps:get(<<"citizen_did">>, Doc))),
-        citizen_kind => text(maps:get(<<"citizen_kind">>, Doc)),
+        citizen_kind => text(maps:get(<<"citizen_kind">>, Doc, undefined)),
         display_name => text(maps:get(<<"display_name">>, Doc, undefined)),
         offers => [text(O) || O <- maps:get(<<"offers">>, Doc, []), is_binary(O)],
         expires_at => maps:get(<<"expires_at">>, Doc)

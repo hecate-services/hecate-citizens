@@ -16,5 +16,7 @@ handle_request(Payload, State) ->
     Reply = fetched(citizen_read_model:find(CitizenDid)),
     {reply, Reply, State}.
 
+%% The error goes out as `{text, Bin}' (CBOR text); a bare binary would
+%% reach non-BEAM callers as bytes.
 fetched({ok, Doc}) -> #{ok => 1, citizen => citizen_read_model:to_wire(Doc)};
-fetched({error, not_found}) -> #{ok => 0, error => <<"not_found">>}.
+fetched({error, not_found}) -> #{ok => 0, error => {text, <<"not_found">>}}.
