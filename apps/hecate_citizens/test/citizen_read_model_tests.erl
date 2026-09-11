@@ -15,6 +15,7 @@ to_wire_tags_text_and_hexes_the_did_test() ->
             <<"citizen_kind">> => <<"agent">>,
             <<"display_name">> => <<"fresh-install-repro">>,
             <<"offers">> => [<<"conversation">>],
+            <<"registered_at">> => 1788353847886,
             <<"expires_at">> => 1788355047886},
     Wire = citizen_read_model:to_wire(Doc),
     ?assertEqual({text, <<"4f769c4e76402f3a0114f00f81a6b255f8f3298a1a9029ea5cf8a25c1463d7a0">>},
@@ -22,13 +23,16 @@ to_wire_tags_text_and_hexes_the_did_test() ->
     ?assertEqual({text, <<"agent">>}, maps:get(citizen_kind, Wire)),
     ?assertEqual({text, <<"fresh-install-repro">>}, maps:get(display_name, Wire)),
     ?assertEqual([{text, <<"conversation">>}], maps:get(offers, Wire)),
+    ?assertEqual(1788353847886, maps:get(registered_at, Wire)),
     ?assertEqual(1788355047886, maps:get(expires_at, Wire)),
     ?assertNot(maps:is_key(id, Wire)).
 
-to_wire_omits_an_absent_display_name_test() ->
+%% A doc stored before registered_at existed has none to send.
+to_wire_omits_an_absent_display_name_and_registered_at_test() ->
     Doc = #{<<"citizen_did">> => raw_did(), <<"citizen_kind">> => <<"service">>, <<"expires_at">> => 1},
     Wire = citizen_read_model:to_wire(Doc),
     ?assertNot(maps:is_key(display_name, Wire)),
+    ?assertNot(maps:is_key(registered_at, Wire)),
     ?assertEqual([], maps:get(offers, Wire)).
 
 to_wire_passes_an_already_hex_did_through_test() ->

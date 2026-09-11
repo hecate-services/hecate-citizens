@@ -77,8 +77,28 @@ read_model_id() -> <<"hecate_citizens">>.
 -spec data_dir() -> string().
 data_dir() -> os:getenv("HECATE_DATA_DIR", "/var/lib/hecate-citizens").
 
-%% @doc Federation: hear every other instance's (and this instance's
-%% own) citizen_presence republish, feeding on_citizen_presence_maybe_admit.
+%% @doc Federation: hear the citizen_presence facts of the hecate-citizens
+%% instances named in the `presence_publishers' app env, feeding
+%% on_citizen_presence_maybe_admit. The listener gets their raw node ids.
+%%
+%% THE LIST IS CHECKED HERE BECAUSE hecate_om CALLS THIS DURING BOOT, and an
+%% error stops the node. A missing or malformed list would make an instance
+%% that federates with nobody, or with the wrong instances, and still
+%% answers /health green.
 -spec subscriptions() -> [{binary(), module(), term()}].
 subscriptions() ->
-    [{<<"hecate_citizens.citizen_presence">>, citizen_presence_listener, []}].
+    [{<<"hecate_citizens.citizen_presence">>, citizen_presence_listener,
+      presence_publishers(application:get_env(hecate_citizens, presence_publishers))}].
+
+presence_publishers({ok, Ids}) when is_binary(Ids) ->
+    [node_id(string:trim(Id)) || Id <- string:split(Ids, <<",">>, all)];
+presence_publishers({ok, _NotABinary}) ->
+    erlang:error({invalid_presence_publishers, not_a_binary});
+presence_publishers(undefined) ->
+    erlang:error({invalid_presence_publishers, missing}).
+
+node_id(Hex) ->
+    hex_node_id(re:run(Hex, <<"\\A[0-9a-fA-F]{64}\\z">>, [{capture, none}]), Hex).
+
+hex_node_id(match, Hex) -> binary:decode_hex(Hex);
+hex_node_id(nomatch, _Hex) -> erlang:error({invalid_presence_publishers, not_64_hex}).

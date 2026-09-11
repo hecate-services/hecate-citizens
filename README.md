@@ -4,21 +4,17 @@
 
 ## Plan
 
-The scaffold below builds and passes its own tests but implements no domain
-logic yet. The full design -- why this exists as its own service rather
-than living inside `hecate-mcp-mail`, the identity-only scope boundary,
-federation across instances -- is in
-[`plans/PLAN_ROOT.md`](plans/PLAN_ROOT.md). Start there.
+The full design -- why this exists as its own service rather than living
+inside `hecate-mcp-mail`, the identity-only scope boundary, federation across
+instances -- is in [`plans/PLAN_ROOT.md`](plans/PLAN_ROOT.md). Start there.
 
-## Status: scaffold
+## Status
 
-The service boots, joins the mesh and answers `/health` on 8491. It
-does nothing else yet.
-
-It announces no capability and asks the realm for no authority, because it can do
-nothing yet. Both lists grow when the thing they name exists. Advertising a
-capability before it exists puts a lie on the mesh where another service can find
-it and call it.
+The service boots, joins the mesh, answers `/health`, and serves three
+capabilities: `hecate_citizens.register_presence`,
+`hecate_citizens.list_citizens` and `hecate_citizens.get_citizen`.
+Registrations federate between instances as described under
+[Federation](#federation).
 
 ## Running it
 
@@ -40,6 +36,7 @@ a different libc.
 |----------|---------|---------|
 | `HECATE_REALM` | required | 64-hex realm tag, the `sha256` of the realm's name. No default: a service that guesses its realm announces itself where nobody can attribute it. |
 | `MACULA_STATION_SEEDS` | required | Station to dial. No default: naming a realm costs nothing, dialling a production station from every dev clone does. |
+| `HECATE_CITIZENS_PRESENCE_PUBLISHERS` | required | Node ids (64 hex, comma separated) of the hecate-citizens instances whose presence facts this one admits; see [Federation](#federation). This instance's own id is optional. A missing or malformed list stops the node at boot. |
 | `HECATE_HEALTH_PORT` | `8491` | Health endpoint. Host networking makes a collision a silent bind failure, so check the host before changing.  |
 | `HECATE_NODE_NAME` | `hecate_citizens` | Erlang node name. |
 | `HECATE_NODE_HOST` | `127.0.0.1` | Erlang node host. |
@@ -49,6 +46,32 @@ a different libc.
 itself. If you deploy through something else, let that carry **placement**: which
 host, which station, which realm, which secret store. Keeping the two apart is
 what stops a config table in a README and the real environment drifting.
+
+## Federation
+
+A citizen registers with `hecate_citizens.register_presence` at whichever
+instance the call reaches. That instance refuses the call unless the caller
+proves it holds the key for `citizen_did` **and** `citizen_did` is the CALL's
+own verified caller, so a captured proof cannot be replayed by another identity.
+It stamps the registration with its own clock as `registered_at`, writes it, and
+publishes it as a `hecate_citizens.citizen_presence` fact carrying
+`registered_at` and `ttl_ms`.
+
+The topic is open to anyone in the realm, so a receiving instance admits a fact
+only when macula verified its publisher signature and the publisher is listed in
+`HECATE_CITIZENS_PRESENCE_PUBLISHERS`. An instance's node id is the public key of
+its identity at `$HECATE_DATA_DIR/identity/keypair.erl.bin`, the same id its
+`hecate_citizens.register_presence` advertisement carries.
+
+Every instance computes the expiry itself and never takes a fact's `expires_at`:
+
+- `ttl_ms` must be a positive integer and is capped at twenty minutes (the
+  default).
+- The entry expires at `registered_at` plus the TTL, and never later than twenty
+  minutes from the receiving instance's own clock.
+- A registration stamped more than a minute ahead of that clock is refused.
+- Of two registrations of one citizen, the later `registered_at` wins, so an
+  owner who registers again with a shorter TTL replaces their own entry.
 
 ## Deployment
 

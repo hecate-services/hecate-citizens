@@ -27,8 +27,9 @@ upsert(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields)
     put(maps:merge(existing_or_new(id(CitizenDid)), presence_doc(Fields))).
 
 %% @doc The stored fields of one presence registration, keyed by binary.
-%% `register_presence_responder' also publishes it through `to_wire/1', so
-%% the citizen_presence fact and a list_citizens entry have one shape.
+%% `register_presence_responder' also publishes it through `to_wire/1',
+%% adding the `ttl_ms' a receiving instance computes its own expiry from,
+%% so the citizen_presence fact is a list_citizens entry plus `ttl_ms'.
 %%
 %% `undefined' fields are omitted: barrel_docdb's automatic secondary
 %% indexing crashes outright on an `undefined' field value
@@ -42,6 +43,7 @@ presence_doc(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields) ->
         <<"citizen_kind">> => maps:get(citizen_kind, Fields),
         <<"display_name">> => maps:get(display_name, Fields, undefined),
         <<"offers">> => maps:get(offers, Fields, []),
+        <<"registered_at">> => maps:get(registered_at, Fields, undefined),
         <<"expires_at">> => ExpiresAt
     }).
 
@@ -92,7 +94,8 @@ skip_expired(_Now, _Doc, _Fun, Acc) ->
 %% the same lowercase hex text `register_presence' accepts on the way in,
 %% not as the raw 32 bytes the record keys on. Integers stay integers.
 %% `register_presence' does not require a `citizen_kind', so a doc can
-%% lack one; it is omitted like any other absent field.
+%% lack one; it is omitted like any other absent field. So is
+%% `registered_at' on a doc stored before that field existed.
 -spec to_wire(map()) -> map().
 to_wire(Doc) ->
     omit_undefined(#{
@@ -100,6 +103,7 @@ to_wire(Doc) ->
         citizen_kind => text(maps:get(<<"citizen_kind">>, Doc, undefined)),
         display_name => text(maps:get(<<"display_name">>, Doc, undefined)),
         offers => [text(O) || O <- maps:get(<<"offers">>, Doc, []), is_binary(O)],
+        registered_at => maps:get(<<"registered_at">>, Doc, undefined),
         expires_at => maps:get(<<"expires_at">>, Doc)
     }).
 

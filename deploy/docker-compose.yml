@@ -4,6 +4,7 @@
 # port, the environment variables its own code reads, and its health check.
 #
 #   HECATE_REALM=<64-hex> MACULA_STATION_SEEDS=https://station.example:4433 \
+#   HECATE_CITIZENS_PRESENCE_PUBLISHERS=<64-hex>,<64-hex> \
 #     docker compose -p hecate-citizens -f deploy/docker-compose.yml up -d
 #
 # IF YOU DEPLOY THROUGH SOMETHING ELSE, keep this file anyway and let the other
@@ -44,6 +45,10 @@ services:
       # No default either: naming a realm costs nothing, dialling somebody's
       # production station from every dev clone does.
       - MACULA_STATION_SEEDS=${MACULA_STATION_SEEDS:?set MACULA_STATION_SEEDS to a station URL}
+      # The node ids (64 hex, comma separated) of the hecate-citizens instances
+      # whose presence facts this one admits. No default either: an instance
+      # that hears nobody still looks healthy, and serves a partial directory.
+      - HECATE_CITIZENS_PRESENCE_PUBLISHERS=${HECATE_CITIZENS_PRESENCE_PUBLISHERS:?set HECATE_CITIZENS_PRESENCE_PUBLISHERS to the node ids of the hecate-citizens instances to federate with}
       - HECATE_NODE_NAME=hecate_citizens
       - HECATE_NODE_HOST=127.0.0.1
       - HECATE_COOKIE=hecate_citizens

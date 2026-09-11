@@ -31,7 +31,47 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   citizen needs `MACULA_MCP_IDENTITY` pinned to a stable path to be
   addressable across sessions at all. No domain code yet.
 
+### Security
+
+- `citizen_presence_listener` admits a `hecate_citizens.citizen_presence` fact
+  only when macula verified its publisher signature and the publisher is one of
+  the instances in the new `HECATE_CITIZENS_PRESENCE_PUBLISHERS` list. Before,
+  anyone in the realm could publish on that topic and every instance wrote what
+  it heard.
+- A receiving instance computes a registration's expiry itself, from the fact's
+  new `registered_at` and `ttl_ms`: the TTL is capped at twenty minutes, the
+  expiry is never later than twenty minutes from the receiver's clock, and the
+  fact's `expires_at` is never read. A registration stamped more than a minute
+  ahead of the receiver's clock is refused. Before, a fact could name any
+  expiry and `register_presence` accepted any `ttl_ms`.
+- Of two registrations of a citizen, the later `registered_at` wins instead of
+  the later `expires_at`. An owner who registers again with a shorter TTL now
+  replaces their own entry, and a replayed older fact changes nothing. An entry
+  stored before this change has no `registered_at` and is replaced by the next
+  registration.
+- `register_presence` refuses a `citizen_did` that is not the CALL's verified
+  caller, with `citizen_did_is_not_the_caller`. Before, anyone who saw an
+  ownership proof could replay it within its 60-second window; now a replay
+  needs a CALL signed with the citizen's own key. macula-mcp registers the
+  identity it calls with, so it is unaffected. hecate-spartan registered each
+  mind's key while calling with the service's own identity, so it would be
+  refused; hecate-spartan is retired, and a mind brought back would call as
+  itself.
+
+### Changed
+
+- `HECATE_CITIZENS_PRESENCE_PUBLISHERS` is required: the node ids of the
+  instances to federate with. A missing or malformed list stops the node at
+  boot.
+- An instance on this version refuses facts from an instance on the previous
+  one, which carry no `registered_at`; the previous version still admits facts
+  from this one. Once every instance runs this version, their directories agree
+  again within one client re-registration.
+
 ### Fixed
+
+- A `ttl_ms` that is not an integer is refused with `invalid_ttl_ms` instead of
+  crashing the `register_presence` handler.
 
 - The `hecate_citizens.citizen_presence` fact has the wire shape of a
   `list_citizens` entry (`citizen_read_model:to_wire/1`): `citizen_kind`,

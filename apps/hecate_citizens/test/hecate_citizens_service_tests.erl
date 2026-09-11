@@ -86,6 +86,69 @@ short_name(FullName) ->
     [_Scope, Short] = binary:split(FullName, <<".">>),
     Short.
 
+%%==============================================================================
+%% Federation: whose citizen_presence facts this instance hears
+%%==============================================================================
+
+%% The listener starts with the raw node ids of the instances named in
+%% `presence_publishers'. Hex in either case, spaces around the commas allowed.
+subscribes_the_listener_to_the_configured_instances_test() ->
+    Ids = <<(binary:encode_hex(<<1:256>>, lowercase))/binary, ", ",
+            (binary:encode_hex(<<2:256>>, uppercase))/binary>>,
+    ?assertEqual([{<<"hecate_citizens.citizen_presence">>, citizen_presence_listener,
+                   [<<1:256>>, <<2:256>>]}],
+                 with_publishers(Ids, fun ?SERVICE:subscriptions/0)).
+
+%% hecate_om calls subscriptions/0 during boot, so these errors stop the node:
+%% one that hears no instance, or the wrong ones, looks healthy and is not.
+refuses_to_boot_without_configured_instances_test() ->
+    ?assertError({invalid_presence_publishers, missing},
+                 with_publishers(unset, fun ?SERVICE:subscriptions/0)).
+
+%% An unset HECATE_CITIZENS_PRESENCE_PUBLISHERS reaches here as `<<>>'.
+refuses_to_boot_on_a_malformed_instance_list_test() ->
+    Good = binary:encode_hex(<<1:256>>, lowercase),
+    Malformed = [<<>>, <<"0">>, binary:part(Good, 0, 63), <<Good/binary, "0">>,
+                 <<"zz", (binary:part(Good, 2, 62))/binary>>,
+                 <<Good/binary, ",">>, <<Good/binary, ",,", Good/binary>>],
+    [?assertError({invalid_presence_publishers, not_64_hex},
+                  with_publishers(Ids, fun ?SERVICE:subscriptions/0))
+     || Ids <- Malformed].
+
+refuses_to_boot_on_an_instance_list_that_is_not_a_binary_test() ->
+    Ids = binary_to_list(binary:encode_hex(<<1:256>>, lowercase)),
+    ?assertError({invalid_presence_publishers, not_a_binary},
+                 with_publishers(Ids, fun ?SERVICE:subscriptions/0)).
+
+%% The release config takes the list from the environment and leaves macula's
+%% publisher signature on. The listener hears a fact only when that signature
+%% verified, so an instance that stopped signing would publish facts no other
+%% instance accepts. macula signs every PUBLISH unless
+%% `pubsub_emit_publisher_sig' is set to something other than true.
+release_config_lists_instances_and_keeps_publisher_signatures_test() ->
+    {ok, Text} = file:read_file(alongside("config/sys.config.src")),
+    ?assertMatch({match, _},
+                 re:run(Text, <<"\\{presence_publishers,\\s*"
+                                "<<\"\\$\\{HECATE_CITIZENS_PRESENCE_PUBLISHERS\\}\">>\\}">>)),
+    %% relx substitutes the ${VARS} at boot; any value parses for this check.
+    Substituted = re:replace(Text, <<"\\$\\{[A-Z_]+\\}">>, <<"0">>, [global, {return, list}]),
+    {ok, Tokens, _End} = erl_scan:string(Substituted),
+    {ok, Config} = erl_parse:parse_term(Tokens),
+    Macula = proplists:get_value(macula, Config, []),
+    ?assertEqual(true, proplists:get_value(pubsub_emit_publisher_sig, Macula, true)),
+    _ = application:load(macula),
+    ?assertEqual(true, application:get_env(macula, pubsub_emit_publisher_sig, true)).
+
+with_publishers(Ids, Fun) ->
+    _ = application:load(?APP),
+    ok = set_publishers(Ids),
+    try Fun()
+    after application:unset_env(?APP, presence_publishers)
+    end.
+
+set_publishers(unset) -> application:unset_env(?APP, presence_publishers);
+set_publishers(Ids) -> application:set_env(?APP, presence_publishers, Ids).
+
 %% The supervisor starts and stops cleanly on its own, without hecate_om. It has
 %% no children as generated; this asserts the tree is startable, not that it does
 %% any work.

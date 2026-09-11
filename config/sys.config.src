@@ -29,5 +29,15 @@
         %% hour, because nothing translates between the two by itself.
         {realm,             <<"${HECATE_REALM}">>}
     ]},
+    {hecate_citizens, [
+        %% THE HECATE-CITIZENS INSTANCES WHOSE citizen_presence FACTS THIS ONE
+        %% ADMITS, as node ids (64 hex, comma separated). Anyone in the realm
+        %% can publish on that topic, so citizen_presence_listener hears only a
+        %% publisher on this list whose signature verified. This instance's own
+        %% id is optional: it writes its own registrations before publishing
+        %% them. No default: hecate_citizens_service:subscriptions/0 stops the
+        %% node on a missing or malformed list.
+        {presence_publishers, <<"${HECATE_CITIZENS_PRESENCE_PUBLISHERS}">>}
+    ]},
     {kernel, [{logger_level, info}]}
 ].
