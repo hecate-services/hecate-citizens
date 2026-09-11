@@ -63,3 +63,26 @@ cases(ok) ->
         ?_assertMatch({ok, #{<<"citizen_did">> := CitizenDid}},
                       citizen_read_model:find(CitizenDid))
     ].
+
+%% A re-registration replaces the whole entry. upsert/1 used to merge the new
+%% fields over the stored doc to carry its `_rev' forward, so a field the new
+%% registration left out (a display_name, a citizen_kind) survived from the
+%% old one, and only the doc's own expiry ever removed it.
+reregistration_replaces_the_whole_entry_test_() ->
+    {setup, fun setup/0, fun teardown/1, fun replaced/1}.
+
+replaced(ok) ->
+    CitizenDid = crypto:strong_rand_bytes(32),
+    Now = erlang:system_time(millisecond),
+    ok = citizen_read_model:upsert(#{citizen_did => CitizenDid, citizen_kind => <<"agent">>,
+                                     display_name => <<"old name">>,
+                                     offers => [<<"conversation">>],
+                                     registered_at => Now, expires_at => Now + 1_200_000}),
+    ok = citizen_read_model:upsert(#{citizen_did => CitizenDid, citizen_kind => undefined,
+                                     display_name => undefined, offers => [],
+                                     registered_at => Now + 1, expires_at => Now + 1_200_001}),
+    {ok, Doc} = citizen_read_model:find(CitizenDid),
+    [?_assertNot(maps:is_key(<<"display_name">>, Doc)),
+     ?_assertNot(maps:is_key(<<"citizen_kind">>, Doc)),
+     ?_assertEqual([], maps:get(<<"offers">>, Doc)),
+     ?_assertEqual(Now + 1, maps:get(<<"registered_at">>, Doc))].

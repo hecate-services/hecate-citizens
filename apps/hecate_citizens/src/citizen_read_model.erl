@@ -24,7 +24,12 @@ upsert(#{citizen_did := CitizenDid, expires_at := ExpiresAt} = Fields)
     %% pattern hecate-stations' station_read_model already establishes
     %% for the identical situation (a heartbeat re-upserting the same
     %% node_id doc).
-    put(maps:merge(existing_or_new(id(CitizenDid)), presence_doc(Fields))).
+    %%
+    %% Only `id' and `_rev' are carried over. The registration replaces
+    %% everything else: a field it leaves out, such as a display_name, is
+    %% gone rather than kept from the entry before.
+    put(maps:merge(maps:with([<<"id">>, <<"_rev">>], existing_or_new(id(CitizenDid))),
+                   presence_doc(Fields))).
 
 %% @doc The stored fields of one presence registration, keyed by binary.
 %% `register_presence_responder' also publishes it through `to_wire/1',

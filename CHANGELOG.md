@@ -72,6 +72,10 @@ this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - A `ttl_ms` that is not an integer is refused with `invalid_ttl_ms` instead of
   crashing the `register_presence` handler.
+- A re-registration replaces the whole directory entry. `citizen_read_model:upsert/1`
+  merged the new fields over the stored document, so a `display_name` or
+  `citizen_kind` that a later registration left out stayed until the entry
+  expired.
 
 - The `hecate_citizens.citizen_presence` fact has the wire shape of a
   `list_citizens` entry (`citizen_read_model:to_wire/1`): `citizen_kind`,
