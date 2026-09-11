@@ -55,6 +55,17 @@ refuses_a_registration_more_than_a_minute_ahead_of_this_clock_test() ->
     ?assertEqual({refused, registered_at_ahead_of_clock},
                  on_citizen_presence_maybe_admit:with_expiry(presence(?NOW + ?MINUTE + 1, ?MINUTE), ?NOW)).
 
+%% What a fact's citizen_did becomes when it does not decode: nothing an entry
+%% can be keyed on, so it is refused before the read model is touched.
+refuses_a_citizen_did_that_did_not_decode_test() ->
+    [?assertEqual({refused, invalid_citizen_did},
+                  on_citizen_presence_maybe_admit:with_expiry(
+                    (presence(?NOW, ?MINUTE))#{citizen_did => Did}, ?NOW))
+     || Did <- [undefined, <<"not-a-did">>, <<7:248>>]],
+    ?assertEqual({refused, invalid_citizen_did},
+                 on_citizen_presence_maybe_admit:with_expiry(
+                   maps:remove(citizen_did, presence(?NOW, ?MINUTE)), ?NOW)).
+
 refuses_a_ttl_that_is_not_a_positive_integer_test() ->
     [?assertEqual({refused, invalid_ttl_ms},
                   on_citizen_presence_maybe_admit:with_expiry(presence(?NOW, TtlMs), ?NOW))

@@ -30,7 +30,8 @@
 -define(MAX_TTL_MS, 1_200_000).
 -define(MAX_AHEAD_MS, 60_000).
 
--type refusal() :: invalid_registered_at | registered_at_ahead_of_clock | invalid_ttl_ms.
+-type refusal() :: invalid_citizen_did | invalid_registered_at | registered_at_ahead_of_clock
+                 | invalid_ttl_ms.
 
 %% @doc Write `Presence' if it wins against the stored registration of the
 %% same citizen. Returns the fields as bounded here, whether or not they
@@ -55,9 +56,16 @@ admitted(admit, Fields) -> citizen_read_model:upsert(Fields);
 admitted(stale, _Fields) -> ok.
 
 %% @doc `Presence' with its TTL bounded and its expiry computed against
-%% `Now', or the reason it is refused.
+%% `Now', or the reason it is refused. A citizen_did that did not decode to
+%% 32 bytes is refused first: no entry can be keyed on it.
 -spec with_expiry(map(), integer()) -> {ok, map()} | {refused, refusal()}.
-with_expiry(#{registered_at := RegisteredAt, ttl_ms := TtlMs} = Presence, Now) ->
+with_expiry(#{citizen_did := CitizenDid} = Presence, Now)
+  when is_binary(CitizenDid), byte_size(CitizenDid) =:= 32 ->
+    timed(Presence, Now);
+with_expiry(_Presence, _Now) ->
+    {refused, invalid_citizen_did}.
+
+timed(#{registered_at := RegisteredAt, ttl_ms := TtlMs} = Presence, Now) ->
     expiring(registered(RegisteredAt, Now), bounded(TtlMs), Presence, Now).
 
 registered(RegisteredAt, Now)

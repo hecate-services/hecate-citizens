@@ -29,7 +29,8 @@ listener_test_() ->
       fun refuses_a_fact_without_registered_at/1,
       fun refuses_a_registration_more_than_a_minute_ahead/1,
       fun an_owners_later_registration_replaces_a_capped_one/1,
-      fun a_replayed_earlier_registration_replaces_nothing/1]}.
+      fun a_replayed_earlier_registration_replaces_nothing/1,
+      fun drops_a_fact_whose_citizen_did_does_not_decode/1]}.
 
 setup() ->
     {ok, _} = application:ensure_all_started(barrel_docdb),
@@ -125,6 +126,14 @@ a_replayed_earlier_registration_replaces_nothing(ok) ->
     {ok, Doc} = citizen_read_model:find(Did),
     [?_assertEqual(<<"current">>, maps:get(<<"display_name">>, Doc)),
      ?_assertEqual(Current, maps:get(<<"registered_at">>, Doc))].
+
+%% A malformed fact from a listed instance is refused, not a crash that takes
+%% the subscriber down with it.
+drops_a_fact_whose_citizen_did_does_not_decode(ok) ->
+    Fact = (fact(did(), now_ms(), 20 * ?MINUTE))#{citizen_did => {text, <<"not-a-did">>}},
+    [?_assertEqual({noreply, [?LISTED]},
+                   citizen_presence_listener:handle_event(?TOPIC, Fact, verified(?LISTED),
+                                                          [?LISTED]))].
 
 %%------------------------------------------------------------------------------
 

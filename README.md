@@ -72,6 +72,11 @@ Every instance computes the expiry itself and never takes a fact's `expires_at`:
 - A registration stamped more than a minute ahead of that clock is refused.
 - Of two registrations of one citizen, the later `registered_at` wins, so an
   owner who registers again with a shorter TTL replaces their own entry.
+- A fact whose `citizen_did` does not decode is refused.
+
+All of this assumes the instances' clocks agree, so run NTP on every instance
+host. A registration stamped more than a minute ahead is refused, and one more
+than twenty minutes behind arrives already expired.
 
 ## Deployment
 
